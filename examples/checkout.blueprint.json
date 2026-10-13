@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "0.1-draft",
+  "exampleOnly": true,
+  "description": "人工构造的蓝图设计样例。目标源码路径尚不存在。金额使用最小货币单位整数。",
+  "projectId": "project-order-example",
+  "revisionId": "blueprint-order-v1",
+  "revision": 1,
+  "schemas": {
+    "OrderInput": {
+      "type": "object",
+      "required": ["sku", "quantity", "unitPrice"],
+      "properties": {
+        "sku": { "type": "string" },
+        "quantity": { "type": "integer", "minimum": 1 },
+        "unitPrice": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "PricedOrder": {
+      "allOf": [
+        { "$ref": "#/schemas/OrderInput" },
+        { "type": "object", "required": ["total"], "properties": { "total": { "type": "integer" } } }
+      ]
+    },
+    "SavedOrder": {
+      "allOf": [
+        { "$ref": "#/schemas/PricedOrder" },
+        { "type": "object", "required": ["orderId"], "properties": { "orderId": { "type": "string" } } }
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "order_form", "name": "订单表单", "type": "ui.form", "executionTarget": "browser",
+      "contract": { "inputs": [], "outputs": [{ "id": "submit", "schemaRef": "#/schemas/OrderInput" }] },
+      "config": { "template": "simple-form", "fields": ["sku", "quantity", "unitPrice"], "submitLabel": "提交订单" },
+      "acceptance": ["提交 sku、quantity、unitPrice 三个字段"]
+    },
+    {
+      "id": "create_order", "name": "创建订单接口", "type": "http.route", "executionTarget": "server",
+      "contract": { "inputs": [{ "id": "request", "schemaRef": "#/schemas/OrderInput" }], "outputs": [{ "id": "order", "schemaRef": "#/schemas/OrderInput" }] },
+      "config": { "method": "POST", "path": "/api/orders", "responseNodeId": "return_order" },
+      "acceptance": ["有效订单返回 201；无效输入返回 400"]
+    },
+    {
+      "id": "validate_order", "name": "校验订单", "type": "logic.validate", "executionTarget": "server",
+      "contract": { "inputs": [{ "id": "input", "schemaRef": "#/schemas/OrderInput" }], "outputs": [{ "id": "valid", "schemaRef": "#/schemas/OrderInput" }] },
+      "logic": { "op": "validate", "schemaRef": "#/schemas/OrderInput", "onFailure": { "action": "return-error", "httpStatus": 400 } },
+      "acceptance": ["数量小于 1 时拒绝，不写入订单"]
+    },
+    {
+      "id": "calculate_total", "name": "计算金额", "type": "logic.calculate", "executionTarget": "server",
+      "contract": { "inputs": [{ "id": "input", "schemaRef": "#/schemas/OrderInput" }], "outputs": [{ "id": "priced", "schemaRef": "#/schemas/PricedOrder" }] },
+      "logic": {
+        "op": "extend-record", "source": "input",
+        "fields": { "total": { "op": "multiply", "args": [{ "field": "input.unitPrice" }, { "field": "input.quantity" }] } }
+      },
+      "acceptance": ["单价 100、数量 2，输出 total 为 200"]
+    },
+    {
+      "id": "save_order", "name": "保存订单", "type": "data.insert", "executionTarget": "server",
+      "contract": { "inputs": [{ "id": "input", "schemaRef": "#/schemas/PricedOrder" }], "outputs": [{ "id": "saved", "schemaRef": "#/schemas/SavedOrder" }] },
+      "config": { "connectionRef": "orders-db", "table": "orders", "returnFields": ["orderId", "sku", "quantity", "unitPrice", "total"] },
+      "acceptance": ["保存计算结果并返回生成的 orderId"]
+    },
+    {
+      "id": "return_order", "name": "返回订单结果", "type": "http.response", "executionTarget": "server",
+      "contract": { "inputs": [{ "id": "input", "schemaRef": "#/schemas/SavedOrder" }], "outputs": [{ "id": "body", "schemaRef": "#/schemas/SavedOrder" }] },
+      "config": { "status": 201 },
+      "acceptance": ["响应体符合 SavedOrder 契约"]
+    },
+    {
+      "id": "show_receipt", "name": "显示订单回执", "type": "ui.result", "executionTarget": "browser",
+      "contract": { "inputs": [{ "id": "order", "schemaRef": "#/schemas/SavedOrder" }], "outputs": [] },
+      "config": { "displayFields": ["orderId", "total"] },
+      "acceptance": ["页面显示后端返回的订单号和金额"]
+    }
+  ],
+  "edges": [
+    { "id": "edge-submit", "kind": "event", "source": { "nodeId": "order_form", "portId": "submit" }, "target": { "nodeId": "create_order", "portId": "request" }, "transport": "http-request" },
+    { "id": "edge-validate", "kind": "data", "source": { "nodeId": "create_order", "portId": "order" }, "target": { "nodeId": "validate_order", "portId": "input" }, "fieldMapping": "identity" },
+    { "id": "edge-price", "kind": "data", "source": { "nodeId": "validate_order", "portId": "valid" }, "target": { "nodeId": "calculate_total", "portId": "input" }, "fieldMapping": "identity" },
+    { "id": "edge-save", "kind": "data", "source": { "nodeId": "calculate_total", "portId": "priced" }, "target": { "nodeId": "save_order", "portId": "input" }, "fieldMapping": "identity" },
+    { "id": "edge-response", "kind": "data", "source": { "nodeId": "save_order", "portId": "saved" }, "target": { "nodeId": "return_order", "portId": "input" }, "fieldMapping": "identity" },
+    { "id": "edge-render", "kind": "data", "source": { "nodeId": "return_order", "portId": "body" }, "target": { "nodeId": "show_receipt", "portId": "order" }, "transport": "http-response", "fieldMapping": "identity" }
+  ],
+  "executionPolicy": { "mode": "ordered-pipeline", "nodeOrder": ["order_form", "create_order", "validate_order", "calculate_total", "save_order", "return_order", "show_receipt"], "onUnhandledError": "stop-and-return-error" },
+  "sourceBindings": [
+    { "nodeId": "order_form", "snapshotId": "snapshot-example-v1", "symbolId": "OrderForm.onSubmit", "path": "src/web/OrderForm.tsx", "range": { "startLine": 18, "endLine": 34 }, "mappingVersion": 1 },
+    { "nodeId": "create_order", "snapshotId": "snapshot-example-v1", "symbolId": "createOrderHandler", "path": "src/server/routes/orders.ts", "range": { "startLine": 8, "endLine": 28 }, "mappingVersion": 1 },
+    { "nodeId": "validate_order", "snapshotId": "snapshot-example-v1", "symbolId": "validateOrder", "path": "src/server/domain/order.ts", "range": { "startLine": 4, "endLine": 12 }, "mappingVersion": 1 },
+    { "nodeId": "calculate_total", "snapshotId": "snapshot-example-v1", "symbolId": "calculateTotal", "path": "src/server/domain/order.ts", "range": { "startLine": 14, "endLine": 18 }, "mappingVersion": 1 },
+    { "nodeId": "save_order", "snapshotId": "snapshot-example-v1", "symbolId": "insertOrder", "path": "src/server/data/orders.ts", "range": { "startLine": 6, "endLine": 22 }, "mappingVersion": 1 },
+    { "nodeId": "return_order", "snapshotId": "snapshot-example-v1", "symbolId": "createOrderHandler.reply", "path": "src/server/routes/orders.ts", "range": { "startLine": 24, "endLine": 26 }, "mappingVersion": 1 },
+    { "nodeId": "show_receipt", "snapshotId": "snapshot-example-v1", "symbolId": "OrderReceipt", "path": "src/web/OrderReceipt.tsx", "range": { "startLine": 5, "endLine": 14 }, "mappingVersion": 1 }
+  ],
+  "capturePolicy": { "id": "capture-example-dev", "allowedFields": ["sku", "quantity", "unitPrice", "total", "orderId"], "maxSnapshotBytes": 8192, "maxDepth": 4, "retentionDays": 3 }
+}

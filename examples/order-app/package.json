@@ -1,0 +1,11 @@
+{
+  "name": "modular-generated-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node app.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

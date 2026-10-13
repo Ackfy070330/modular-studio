@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "0.1-draft",
+  "exampleOnly": true,
+  "description": "人工构造的成功执行样例，用于说明归一化数据模型。不是实际采集结果，也不是 OTLP 传输格式；只选择业务模块粒度，省略 HTTP 客户端和数据库驱动等底层 Span。",
+  "projectId": "project-order-example",
+  "blueprintRevisionId": "blueprint-order-v1",
+  "environment": { "id": "env-local", "name": "本地开发", "stage": "development", "connectorId": "connector-example" },
+  "runId": "run-example-001",
+  "snapshotId": "snapshot-example-v1",
+  "buildId": "build-example-v1",
+  "traceId": "11111111111111111111111111111111",
+  "viewGranularity": "business-module",
+  "status": "ok",
+  "coverage": { "state": "selected-modules", "unresolvedLinks": [], "sampling": "all-example-events", "includesAllProgramVariables": false },
+  "spans": [
+    { "spanId": "0000000000000001", "parentSpanId": null, "links": [], "nodeId": "order_form", "service": "order-web", "name": "订单提交交互", "startTime": "2026-10-12T02:00:00.000Z", "endTime": "2026-10-12T02:00:00.140Z", "status": "ok", "snapshotRefs": [] },
+    { "spanId": "0000000000000002", "parentSpanId": "0000000000000001", "links": [], "nodeId": "create_order", "service": "order-api", "name": "POST /api/orders", "startTime": "2026-10-12T02:00:00.008Z", "endTime": "2026-10-12T02:00:00.125Z", "status": "ok", "snapshotRefs": [] },
+    { "spanId": "0000000000000003", "parentSpanId": "0000000000000002", "links": [], "nodeId": "validate_order", "service": "order-api", "name": "validateOrder", "startTime": "2026-10-12T02:00:00.010Z", "endTime": "2026-10-12T02:00:00.012Z", "status": "ok", "snapshotRefs": [] },
+    { "spanId": "0000000000000004", "parentSpanId": "0000000000000002", "links": [], "nodeId": "calculate_total", "service": "order-api", "name": "calculateTotal", "startTime": "2026-10-12T02:00:00.014Z", "endTime": "2026-10-12T02:00:00.020Z", "status": "ok", "snapshotRefs": ["capture-price"] },
+    { "spanId": "0000000000000005", "parentSpanId": "0000000000000002", "links": [], "nodeId": "save_order", "service": "order-api", "name": "insertOrder", "startTime": "2026-10-12T02:00:00.025Z", "endTime": "2026-10-12T02:00:00.115Z", "status": "ok", "snapshotRefs": ["capture-save"] },
+    { "spanId": "0000000000000006", "parentSpanId": "0000000000000002", "links": [], "nodeId": "return_order", "service": "order-api", "name": "reply 201", "startTime": "2026-10-12T02:00:00.117Z", "endTime": "2026-10-12T02:00:00.124Z", "status": "ok", "snapshotRefs": [] },
+    { "spanId": "0000000000000007", "parentSpanId": "0000000000000001", "links": [], "nodeId": "show_receipt", "service": "order-web", "name": "render receipt", "startTime": "2026-10-12T02:00:00.130Z", "endTime": "2026-10-12T02:00:00.139Z", "status": "ok", "snapshotRefs": [] }
+  ],
+  "snapshots": [
+    {
+      "id": "capture-price", "traceId": "11111111111111111111111111111111", "spanId": "0000000000000004", "nodeId": "calculate_total",
+      "captureState": "captured", "policyId": "capture-example-dev", "capturedAt": "2026-10-12T02:00:00.020Z",
+      "input": { "sku": "example-sku", "quantity": 2, "unitPrice": 100 },
+      "output": { "sku": "example-sku", "quantity": 2, "unitPrice": 100, "total": 200 },
+      "redactedFields": [], "truncated": false,
+      "fieldLineage": [{ "outputField": "total", "inputFields": ["unitPrice", "quantity"], "operation": "multiply", "evidence": "declared-blueprint-logic" }]
+    },
+    {
+      "id": "capture-save", "traceId": "11111111111111111111111111111111", "spanId": "0000000000000005", "nodeId": "save_order",
+      "captureState": "captured", "policyId": "capture-example-dev", "capturedAt": "2026-10-12T02:00:00.115Z",
+      "input": { "sku": "example-sku", "quantity": 2, "unitPrice": 100, "total": 200 },
+      "output": { "orderId": "example-order-001", "sku": "example-sku", "quantity": 2, "unitPrice": 100, "total": 200 },
+      "redactedFields": [], "truncated": false, "fieldLineage": []
+    }
+  ],
+  "snapshotAvailability": [
+    { "nodeId": "order_form", "state": "not-captured", "reason": "仅采集交互耗时" },
+    { "nodeId": "create_order", "state": "not-captured", "reason": "输入输出由业务模块选择性记录" },
+    { "nodeId": "validate_order", "state": "not-captured", "reason": "本样例未启用该模块的数据快照" },
+    { "nodeId": "calculate_total", "state": "captured" },
+    { "nodeId": "save_order", "state": "captured" },
+    { "nodeId": "return_order", "state": "not-captured", "reason": "本样例仅记录响应状态与耗时" },
+    { "nodeId": "show_receipt", "state": "not-captured", "reason": "本样例仅记录展示步骤" }
+  ],
+  "debugContext": { "state": "not-attached", "variables": null, "stackFrames": null, "reason": "历史轨迹没有活动调试器，不能还原未采集的局部变量" }
+}

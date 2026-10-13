@@ -1,0 +1,36 @@
+appId: io.github.ackfy070330.modularstudio
+productName: Modular Studio
+directories:
+  app: desktop
+  output: release
+  buildResources: desktop/assets
+files:
+  - main.cjs
+  - preload.cjs
+  - package.json
+  - assets/**
+  - '!**/node_modules/**'
+extraResources:
+  - from: desktop-runtime/backend
+    to: backend
+  - from: desktop-runtime/node
+    to: node
+  - from: desktop-runtime/ui
+    to: ui
+asar: true
+npmRebuild: false
+win:
+  icon: desktop/assets/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+  signExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 模序 Modular Studio
+  artifactName: Modular-Studio-Setup-${version}-${arch}.${ext}
+publish: null

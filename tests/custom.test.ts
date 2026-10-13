@@ -1,0 +1,71 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+import os from 'node:os';
+import path from 'node:path';
+import { exampleGraph, makeNode, type Assignment } from '../shared/model.js';
+import { parseGraph, executionOrder } from '../server/domain.js';
+import { compileGraph } from '../server/compiler.js';
+const directory = await mkdtemp(path.join(os.tmpdir(), 'modular-custom-'));
+process.env.MODULAR_DATA_DIR = directory;
+process.env.MODULAR_AGENT_API_KEY = '';
+const { requireCustomAccess, assertCustomChanges, generateCustom, saveAgentSettings, agentSettings } = await import('../server/agents.js');
+const { db } = await import('../server/store.js');
+let received: any; let unsupported = false; let badField = false;
+const operations: Assignment[] = [{ field: 'discountedTotal', value: { kind: 'math', op: '*', left: { kind: 'field', name: 'total' }, right: { kind: 'number', value: 0.9 } } }, { field: 'status', value: { kind: 'literal', value: '已计算' } }];
+const mock = createServer(async (req, res) => {
+  let raw = ''; for await (const chunk of req) raw += chunk;
+  received = { payload: JSON.parse(raw), authorization: req.headers.authorization };
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ supported: !unsupported, summary: unsupported ? '暂不支持网络请求' : '计算折后金额并添加状态', operations: badField ? [{ field: '__proto__', value: { kind: 'literal', value: 'bad' } }] : operations }) } }] }));
+});
+await new Promise<void>(r => mock.listen(0, '127.0.0.1', r));
+const settings = { baseUrl: `http://127.0.0.1:${(mock.address() as { port: number }).port}/v1`, model: 'custom-test' };
+function customGraph() {
+  const g = exampleGraph(); const n = makeNode('custom', 'discount');
+  n.data.config = { instructions: '计算九折金额并添加状态', operations, generatedFor: '计算九折金额并添加状态' };
+  g.nodes.push(n);
+  const incoming = g.edges.find(e => e.source === 'calculate_total')!;
+  incoming.target = n.id;
+  g.edges.push({ id: 'discount_to_save', source: n.id, target: 'save_order', label: '传递订单金额', data: { custom: { instructions: '把 discountedTotal 复制为 orderAmount', generatedFor: '把 discountedTotal 复制为 orderAmount', operations: [{ field: 'orderAmount', value: { kind: 'field', name: 'discountedTotal' } }] } } });
+  return g;
+}
+test('custom feature requires a key; generated content is validated and credentials never enter results', async () => {
+  saveAgentSettings({ ...settings, apiKey: '  ' });
+  assert.equal(agentSettings().hasKey, false);
+  assert.throws(requireCustomAccess, /API Key/);
+  assert.throws(() => assertCustomChanges(customGraph(), exampleGraph()), /API Key/);
+  const edgeOnly = exampleGraph(); edgeOnly.edges[0].data = { custom: { instructions: '原样传递', operations: [], generatedFor: '原样传递' } };
+  assert.throws(() => assertCustomChanges(edgeOnly, exampleGraph()), /API Key/);
+  await assert.rejects(generateCustom({ target: 'node', instructions: 'test', graph: exampleGraph() }), /API Key/);
+  saveAgentSettings({ ...settings, apiKey: 'test-only-secret' });
+  assert.doesNotThrow(() => assertCustomChanges(customGraph(), exampleGraph()));
+  const result = await generateCustom({ target: 'node', instructions: '计算九折金额并添加状态', graph: exampleGraph() });
+  assert.deepEqual(result.operations, operations); assert.equal(result.generatedFor, '计算九折金额并添加状态');
+  assert.equal(received.authorization, 'Bearer test-only-secret'); assert.ok(!JSON.stringify(result).includes('test-only-secret'));
+  const edgeResult = await generateCustom({ target: 'edge', id: 'edge-3', instructions: '字段计算', graph: exampleGraph() });
+  assert.ok(edgeResult.supported); assert.equal(JSON.parse(received.payload.messages[1].content).target, 'edge');
+  unsupported = true; await assert.rejects(generateCustom({ target: 'node', instructions: '调用外部网站', graph: exampleGraph() }), /暂不支持/); unsupported = false;
+  badField = true; await assert.rejects(generateCustom({ target: 'node', instructions: '注入字段', graph: exampleGraph() })); badField = false;
+});
+test('custom module and edge mapping execute in generated code and downstream input is captured after mapping', async () => {
+  const graph = parseGraph(JSON.parse(JSON.stringify(customGraph())));
+  assert.equal(graph.edges.at(-1)?.data?.custom?.operations[0].field, 'orderAmount');
+  const compiled = compileGraph(graph); const filename = path.join(directory, 'custom-pipeline.mjs'); await writeFile(filename, compiled.code);
+  const { runPipeline } = await import(pathToFileURL(filename).href); const steps: any[] = [];
+  const result = await runPipeline({ sku: 'TEST', quantity: 2, unitPrice: 100 }, { databasePath: path.join(directory, 'records.sqlite'), onStep: (s: any) => steps.push(s) });
+  assert.equal(result.total, 200); assert.equal(result.discountedTotal, 180); assert.equal(result.orderAmount, 180); assert.equal(result.status, '已计算');
+  assert.equal(steps.find(s => s.nodeId === 'save_order' && s.status === 'running').input.orderAmount, 180);
+  assert.ok(result.recordId);
+});
+test('edited custom instructions invalidate old logic; unchanged custom graphs remain readable without a key', () => {
+  const graph = customGraph(); graph.nodes.at(-1)!.data.config.instructions += '再打折';
+  assert.throws(() => executionOrder(graph), /尚未生成逻辑/);
+  const edgeGraph = customGraph(); edgeGraph.edges.at(-1)!.data!.custom!.instructions += '修改';
+  assert.throws(() => executionOrder(edgeGraph), /尚未生成逻辑/);
+  saveAgentSettings({ ...settings, apiKey: '' });
+  assert.doesNotThrow(() => assertCustomChanges(customGraph(), customGraph()));
+});
+test.after(async () => { await new Promise<void>(r => mock.close(() => r())); db.close(); });

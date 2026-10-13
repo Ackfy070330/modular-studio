@@ -1,0 +1,187 @@
+{
+  "nodes": [
+    {
+      "id": "order_form",
+      "type": "module",
+      "position": {
+        "x": 60,
+        "y": 80
+      },
+      "data": {
+        "kind": "form",
+        "label": "订单表单",
+        "description": "收集用户填写的数据",
+        "config": {
+          "fields": [
+            {
+              "name": "sku",
+              "label": "商品编号",
+              "type": "text",
+              "value": "SKU-001"
+            },
+            {
+              "name": "quantity",
+              "label": "数量",
+              "type": "number",
+              "value": 2
+            },
+            {
+              "name": "unitPrice",
+              "label": "单价（分）",
+              "type": "number",
+              "value": 100
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "create_order",
+      "type": "module",
+      "position": {
+        "x": 370,
+        "y": 80
+      },
+      "data": {
+        "kind": "api",
+        "label": "创建订单接口",
+        "description": "定义请求与响应入口",
+        "config": {
+          "method": "POST",
+          "path": "/api/orders"
+        }
+      }
+    },
+    {
+      "id": "validate_order",
+      "type": "module",
+      "position": {
+        "x": 680,
+        "y": 80
+      },
+      "data": {
+        "kind": "validate",
+        "label": "校验订单",
+        "description": "验证字段与业务约束",
+        "config": {
+          "field": "quantity",
+          "minimum": 1
+        }
+      }
+    },
+    {
+      "id": "calculate_total",
+      "type": "module",
+      "position": {
+        "x": 680,
+        "y": 290
+      },
+      "data": {
+        "kind": "transform",
+        "label": "计算订单金额",
+        "description": "用积木定义计算逻辑",
+        "config": {
+          "outputField": "total",
+          "expression": {
+            "kind": "math",
+            "op": "*",
+            "left": {
+              "kind": "field",
+              "name": "unitPrice"
+            },
+            "right": {
+              "kind": "field",
+              "name": "quantity"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "save_order",
+      "type": "module",
+      "position": {
+        "x": 370,
+        "y": 290
+      },
+      "data": {
+        "kind": "database",
+        "label": "保存订单",
+        "description": "将结果写入本地数据库",
+        "config": {
+          "collection": "orders"
+        }
+      }
+    },
+    {
+      "id": "return_order",
+      "type": "module",
+      "position": {
+        "x": 60,
+        "y": 290
+      },
+      "data": {
+        "kind": "response",
+        "label": "返回订单结果",
+        "description": "输出结构化处理结果",
+        "config": {
+          "statusCode": 201
+        }
+      }
+    },
+    {
+      "id": "show_receipt",
+      "type": "module",
+      "position": {
+        "x": 60,
+        "y": 500
+      },
+      "data": {
+        "kind": "view",
+        "label": "显示订单回执",
+        "description": "把执行结果呈现给用户",
+        "config": {
+          "title": "订单创建成功"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-0",
+      "source": "order_form",
+      "target": "create_order",
+      "label": "提交数据"
+    },
+    {
+      "id": "edge-1",
+      "source": "create_order",
+      "target": "validate_order",
+      "label": "订单参数"
+    },
+    {
+      "id": "edge-2",
+      "source": "validate_order",
+      "target": "calculate_total",
+      "label": "校验通过"
+    },
+    {
+      "id": "edge-3",
+      "source": "calculate_total",
+      "target": "save_order",
+      "label": "金额结果"
+    },
+    {
+      "id": "edge-4",
+      "source": "save_order",
+      "target": "return_order",
+      "label": "存储结果"
+    },
+    {
+      "id": "edge-5",
+      "source": "return_order",
+      "target": "show_receipt",
+      "label": "响应数据"
+    }
+  ]
+}
