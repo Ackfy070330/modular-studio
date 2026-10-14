@@ -1,4 +1,5 @@
-export type NodeKind = 'form' | 'api' | 'validate' | 'transform' | 'database' | 'response' | 'view' | 'source' | 'custom';
+import type { PageDesign } from './page';
+export type NodeKind = 'form' | 'event' | 'value' | 'text' | 'list' | 'api' | 'validate' | 'transform' | 'database' | 'response' | 'view' | 'source' | 'custom';
 export type Expression = { kind: 'field'; name: string } | { kind: 'number'; value: number } | { kind: 'math'; op: '+' | '-' | '*' | '/'; left: Expression; right: Expression };
 export type Assignment = { field: string; value: Expression | { kind: 'literal'; value: string | number | boolean | null } };
 export interface CustomContent { instructions: string; operations: Assignment[]; generatedFor?: string }
@@ -8,11 +9,15 @@ export interface BlockData extends Record<string, unknown> {
 export interface GraphNode { id: string; type: 'module'; position: { x: number; y: number }; data: BlockData }
 export interface LoopConfig { maxIterations: number; condition?: { field: string; op: '<' | '<=' | '>' | '>=' | '==' | '!='; value: number } }
 export interface GraphEdge { id: string; source: string; target: string; label?: string; data?: { custom?: CustomContent; loop?: LoopConfig } }
-export interface Graph { nodes: GraphNode[]; edges: GraphEdge[] }
+export interface Graph { nodes: GraphNode[]; edges: GraphEdge[]; page?: PageDesign }
 export interface Project { id: string; name: string; description: string; revision: number; graph: Graph; sourceRoot: string | null; createdAt: string; updatedAt: string }
 export interface Step { nodeId: string; sequence?: number; visit?: number; viaEdgeId?: string; loopDecision?: string; label: string; kind: NodeKind; status: 'running' | 'ok' | 'error'; startedAt: string; durationMs?: number; input: any; output?: any; error?: string; sourceLine?: number }
 export interface Run { id: string; projectId: string; revision: number; graph: Graph; input: any; status: 'running' | 'paused' | 'ok' | 'error' | 'cancelled'; startedAt: string; finishedAt?: string; environment: string; steps: Step[]; output?: any; error?: string; debug: boolean; traceId: string }
 export const kinds: Record<NodeKind, { label: string; subtitle: string; color: string; group: string }> = {
+  event: { label: '页面事件', subtitle: '由页面按钮触发，携带输入与默认值', color: '#4e88d8', group: '界面与事件' },
+  value: { label: '设置数据', subtitle: '写入文本、数字或 JSON 列表', color: '#399880', group: '数据与输出' },
+  text: { label: '文本组合', subtitle: '使用 {{字段}} 生成动态文案', color: '#8063d4', group: '服务与逻辑' },
+  list: { label: '列表处理', subtitle: '统计数量、读取第一项或最后一项', color: '#399880', group: '数据与输出' },
   form: { label: '表单输入', subtitle: '收集用户填写的数据', color: '#4e88d8', group: '界面与事件' },
   view: { label: '结果展示', subtitle: '把执行结果呈现给用户', color: '#4e88d8', group: '界面与事件' },
   api: { label: 'API 接口', subtitle: '定义请求与响应入口', color: '#8063d4', group: '服务与逻辑' },
@@ -26,6 +31,10 @@ export const kinds: Record<NodeKind, { label: string; subtitle: string; color: s
 export const defaultExpression: Expression = { kind: 'math', op: '*', left: { kind: 'field', name: 'unitPrice' }, right: { kind: 'field', name: 'quantity' } };
 export function makeNode(kind: NodeKind, id: string, position = { x: 100, y: 100 }): GraphNode {
   const configs: Record<NodeKind, any> = {
+    event: { fields: [{ name: 'name', label: '称呼', type: 'text', value: '朋友' }] },
+    value: { outputField: 'items', value: [{ name: '页面设计', status: '已连接' }, { name: '功能流程', status: '可运行' }, { name: '数据展示', status: '待绑定' }] },
+    text: { outputField: 'message', template: '你好，{{name}}！你的页面已成功连接功能流程。' },
+    list: { field: 'items', outputField: 'count', operation: 'count' },
     form: { fields: [{ name: 'sku', label: '商品编号', type: 'text', value: 'SKU-001' }, { name: 'quantity', label: '数量', type: 'number', value: 2 }, { name: 'unitPrice', label: '单价（分）', type: 'number', value: 100 }] },
     api: { method: 'POST', path: '/api/orders' },
     validate: { field: 'quantity', minimum: 1 },

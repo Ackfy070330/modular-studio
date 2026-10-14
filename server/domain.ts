@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pageSchema } from './page-domain.js';
 import type { Expression, Graph } from '../shared/model.js';
 const fieldName = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/).refine(s => !['__proto__', 'constructor', 'prototype'].includes(s));
 const expression: z.ZodType<Expression> = z.lazy(() => z.discriminatedUnion('kind', [
@@ -10,6 +11,10 @@ export const operationsSchema = z.array(z.object({ field: fieldName, value: z.un
 export const customContentSchema = z.object({ instructions: z.string().max(4000), operations: operationsSchema, generatedFor: z.string().max(4000).optional() });
 export const loopSchema = z.object({ maxIterations: z.number().int().min(1).max(100), condition: z.object({ field: fieldName, op: z.enum(['<', '<=', '>', '>=', '==', '!=']), value: z.number().finite() }).optional() });
 const configs = {
+  event: z.object({ fields: z.array(z.object({ name: fieldName, label: z.string().max(80), type: z.enum(['text','number']), value: z.union([z.string().max(2000),z.number().finite()]) })).max(20) }),
+  value: z.object({ outputField: fieldName, value: z.unknown().refine(v => v !== undefined && JSON.stringify(v).length <= 12000, '数据值过大或无效') }),
+  text: z.object({ outputField: fieldName, template: z.string().max(2000) }),
+  list: z.object({ field: fieldName, outputField: fieldName, operation: z.enum(['count','first','last']) }),
   form: z.object({ fields: z.array(z.object({ name: fieldName, label: z.string().max(80), type: z.enum(['text', 'number']), value: z.union([z.string(), z.number()]) })).min(1).max(20) }),
   api: z.object({ method: z.literal('POST'), path: z.string().regex(/^\/[a-zA-Z0-9_\-/]*$/).max(150) }),
   validate: z.object({ field: fieldName, minimum: z.number().finite() }),
@@ -21,7 +26,8 @@ const configs = {
   custom: customContentSchema,
 };
 const graphSchema = z.object({
-  nodes: z.array(z.object({ id: z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/), type: z.literal('module'), position: z.object({ x: z.number().finite(), y: z.number().finite() }), data: z.object({ label: z.string().min(1).max(100), description: z.string().max(500), kind: z.enum(['form', 'api', 'validate', 'transform', 'database', 'response', 'view', 'source', 'custom']), config: z.record(z.string(), z.unknown()) }) })).max(200),
+  page: pageSchema.optional(),
+  nodes: z.array(z.object({ id: z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/), type: z.literal('module'), position: z.object({ x: z.number().finite(), y: z.number().finite() }), data: z.object({ label: z.string().min(1).max(100), description: z.string().max(500), kind: z.enum(['event', 'value', 'text', 'list', 'form', 'api', 'validate', 'transform', 'database', 'response', 'view', 'source', 'custom']), config: z.record(z.string(), z.unknown()) }) })).max(200),
   edges: z.array(z.object({ id: z.string().min(1).max(100), source: z.string(), target: z.string(), label: z.string().max(100).optional(), data: z.object({ custom: customContentSchema.optional(), loop: loopSchema.optional() }).optional() })).max(400),
 });
 export function parseGraph(value: unknown): Graph {
@@ -60,9 +66,9 @@ export function executionOrder(graph: Graph) {
     node = graph.nodes.find(n => n.id === next)!;
   }
   if (ordered.length !== graph.nodes.length) throw new Error('存在未连接的模块或环路');
-  if (ordered[0].data.kind !== 'form') throw new Error('流程应从表单输入开始');
+  if (!['form','event'].includes(ordered[0].data.kind)) throw new Error('流程应从表单输入或页面事件开始');
   if (ordered.at(-1)?.data.kind !== 'view') throw new Error('流程应以结果展示结束');
-  if (ordered.filter(n => n.data.kind === 'form').length !== 1 || ordered.filter(n => n.data.kind === 'view').length !== 1) throw new Error('流程只支持一个表单与一个结果展示');
+  if (ordered.filter(n => ['form','event'].includes(n.data.kind)).length !== 1 || ordered.filter(n => n.data.kind === 'view').length !== 1) throw new Error('流程只支持一个输入入口（表单或页面事件）与一个结果展示');
   if (ordered.filter(n => n.data.kind === 'api').length !== 1 || ordered.filter(n => n.data.kind === 'response').length !== 1) throw new Error('流程需要一个 API 接口和一个返回响应模块');
   if (ordered[1]?.data.kind !== 'api' || ordered.at(-2)?.data.kind !== 'response') throw new Error('API 应紧接表单，返回响应应紧接结果展示之前');
   const ranges: { start: number; end: number }[] = [];

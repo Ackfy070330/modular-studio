@@ -1,5 +1,6 @@
 import type { Graph, GraphNode } from '../shared/model.js';
 import { executionOrder } from './domain.js';
+import { designedPageHtml } from './page-compiler.js';
 export function compileGraph(graph: Graph) {
   const ordered = executionOrder(graph);
   const bindings: Record<string, number> = {};
@@ -29,6 +30,10 @@ export function compileGraph(graph: Graph) {
     bindings[node.id] = lines.length + 1;
     lines.push(`async function step_${index}(data, context) {`, `  const config = ${JSON.stringify(node.data.config)};`, `  if (context.breakpoints.includes(${JSON.stringify(node.id)})) { debugger; }`);
     switch (node.data.kind) {
+      case 'event': lines.push(`  const output = { ...data }; for (const f of config.fields) { if (output[f.name] === undefined || output[f.name] === '') output[f.name] = f.value; if (f.type === 'number' && (typeof output[f.name] !== 'number' || !Number.isFinite(output[f.name]))) throw new Error(f.label + ' 必须是数字'); } return output;`); break;
+      case 'value': lines.push(`  return { ...data, [config.outputField]: structuredClone(config.value) };`); break;
+      case 'text': lines.push(`  const text = config.template.replace(/\{\{([a-zA-Z_][a-zA-Z0-9_]{0,63})\}\}/g, (_, field) => { if (!Object.hasOwn(data, field)) throw new Error('文本字段 ' + field + ' 不存在'); return typeof data[field] === 'object' ? JSON.stringify(data[field]) : String(data[field]); }); return { ...data, [config.outputField]: text };`); break;
+      case 'list': lines.push(`  const items = data[config.field]; if (!Array.isArray(items)) throw new Error(config.field + ' 必须为列表'); return { ...data, [config.outputField]: config.operation === 'count' ? items.length : (config.operation === 'first' ? items[0] : items.at(-1)) ?? null };`); break;
       case 'form': lines.push(`  for (const f of config.fields) { if (data[f.name] === undefined || data[f.name] === '') throw new Error('请填写 ' + f.label); if (f.type === 'number' && (typeof data[f.name] !== 'number' || !Number.isFinite(data[f.name]))) throw new Error(f.label + ' 必须是数字'); }`, `  return { ...data };`); break;
       case 'validate': lines.push(`  if (typeof data[config.field] !== 'number' || data[config.field] < config.minimum) throw new Error(config.field + ' 必须大于等于 ' + config.minimum);`, `  return { ...data };`); break;
       case 'transform': lines.push(`  const result = evaluate(config.expression, data);`, `  return { ...data, [config.outputField]: result };`); break;
@@ -76,6 +81,7 @@ export function compileGraph(graph: Graph) {
   return { code: lines.join('\n'), bindings, ordered };
 }
 export function previewHtml(projectId: string, name: string, graph: Graph, standalone = false) {
+  if (graph.page) return designedPageHtml(projectId, name, graph, standalone);
   const form = graph.nodes.find(n => n.data.kind === 'form');
   const title = graph.nodes.find(n => n.data.kind === 'view')?.data.config.title || '执行成功';
   const escape = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));

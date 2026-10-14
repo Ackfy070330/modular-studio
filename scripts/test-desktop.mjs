@@ -58,10 +58,23 @@ try {
   const loopHistory = await json(`/api/runs/${loopRun.runId}`); assert.equal(loopHistory.steps.filter(s => s.nodeId === 'calculate_total').length, 3);
   const plan = await json(`/api/projects/${loopProject.id}/plan`, 'POST', { graph: { nodes: loopProject.graph.nodes, edges: [] } });
   assert.equal(plan.errors.length, 0); assert.equal(plan.graph.nodes.length, 7);
+  const web = await json('/api/projects', 'POST', { name: 'Page integration', projectType: 'dashboard' });
+  assert.equal(web.graph.page.projectType, 'dashboard');
+  web.graph.page.blocks.find(b => b.id === 'hero').text = 'Persisted page title';
+  const savedWeb = await json(`/api/projects/${web.id}`, 'PUT', { name: web.name, revision: web.revision, graph: web.graph });
+  const webRun = await json(`/api/projects/${web.id}/execute`, 'POST', { input: { name: 'Integration', eventId: 'run_button' } });
+  assert.equal(webRun.output.count, 3); assert.match(webRun.output.message, /Integration/);
+  const webPreview = await request(`/api/projects/${web.id}/preview`); assert.equal(webPreview.status, 200);
+  assert.ok((await webPreview.text()).includes('Persisted page title'));
+  const webPlan = await json(`/api/projects/${web.id}/plan`, 'POST', { graph: savedWeb.graph }); assert.deepEqual(webPlan.graph.page, savedWeb.graph.page);
+  const exported = await request(`/api/projects/${web.id}/export`); assert.equal(exported.status, 200); assert.equal(exported.headers.get('content-type'), 'application/zip');
+  assert.equal((await request('/api/projects', {method:'POST',body:JSON.stringify({name:'Unavailable',projectType:'game'})})).status, 400);
   await stop(); await start();
+  assert.equal((await json(`/api/projects/${web.id}`)).graph.page.blocks.find(b => b.id === 'hero').text, 'Persisted page title');
+  assert.equal((await json(`/api/runs/${webRun.runId}`)).output.count,3);
   assert.equal((await json(`/api/projects/${project.id}`)).name, 'Desktop smoke test');
   assert.equal((await json(`/api/projects/${project.id}/runs`)).length, 2);
   assert.equal((await json(`/api/runs/${loopRun.runId}`)).steps.length, 9);
   await stop();
-  console.log('Desktop backend passed: bundled Node, auth, UI, execution, SQLite, debugger, import, key gate, loops, planner, persistence and shutdown.');
+  console.log('Desktop backend passed: bundled Node, auth, UI, execution, SQLite, debugger, import, key gate, loops, planner, web pages, export, persistence and shutdown.');
 } finally { if (child && child.exitCode === null) child.kill(); }

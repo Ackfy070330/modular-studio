@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Download, RefreshCw, X, FolderOpen } from 'lucide-react';
 import type { UpdateState } from './desktop';
 export function UpdateDialog({ close }: { close: () => void }) {
-  const [state, setState] = useState<UpdateState>({ status: 'idle', currentVersion: '0.2.1' });
+  const [state, setState] = useState<UpdateState>({ status: 'idle', currentVersion: '0.3.0' });
   const [error, setError] = useState('');
   useEffect(() => {
     if (!window.desktop) return;

@@ -14,6 +14,7 @@ import { planGraph } from './planner.js';
 import { startRun, debugState, controlRun, stopAll } from './runtime.js';
 import { analyzeProject, readProjectSource } from './importer.js';
 import { agentSettings, saveAgentSettings, proposeChanges, applyProposal, assertCustomChanges, generateCustom } from './agents.js';
+import { webGraph } from '../shared/page.js';
 import { exampleGraph, loopExampleGraph } from '../shared/model.js';
 export const app = Fastify({ logger: false, bodyLimit: 512000 });
 const desktopToken = process.env.MODULAR_SESSION_TOKEN;
@@ -30,15 +31,15 @@ app.addHook('onRequest', async (request, reply) => {
     const expected = Buffer.from(desktopToken);
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return reply.code(403).send({ message: '需要桌面会话凭据' });
     const preview = /^\/api\/projects\/[^/]+\/preview(?:\?|$)/.test(request.url);
-    reply.header('Content-Security-Policy', `default-src 'self'; script-src 'self'${preview ? " 'unsafe-inline'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'`);
+    reply.header('Content-Security-Policy', `default-src 'self'; script-src 'self'${preview ? " 'unsafe-inline'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:${preview ? ' https:' : ''}; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'`);
   }
   reply.header('X-Content-Type-Options', 'nosniff');
 });
 app.setErrorHandler((error: any, _request, reply) => { const status = error.statusCode || 400; reply.code(status).send({ message: error instanceof z.ZodError ? error.issues.map(i => `${i.path.join('.')}：${i.message}`).join('；').slice(0, 800) : error.message || '操作失败' }); });
 const idOf = (r: any) => String(r.params.id);
-app.get('/api/health', async () => ({ ok: true, version: '0.2.1', storage: 'sqlite', runtime: process.version, mode: 'local' }));
+app.get('/api/health', async () => ({ ok: true, version: '0.3.0', storage: 'sqlite', runtime: process.version, mode: 'local' }));
 app.get('/api/projects', async () => allProjects());
-app.post('/api/projects', async req => { const { name, empty, template } = z.object({ name: z.string().min(1).max(80), empty: z.boolean().optional(), template: z.literal('loop').optional() }).parse(req.body); return createProject(name, empty ? { nodes: [], edges: [] } : template === 'loop' ? loopExampleGraph() : exampleGraph()); });
+app.post('/api/projects', async req => { const { name, empty, template, projectType } = z.object({ name: z.string().min(1).max(80), empty: z.boolean().optional(), template: z.literal('loop').optional(), projectType: z.enum(['landing','dashboard','website']).optional() }).parse(req.body); return createProject(name, projectType ? webGraph(projectType, empty) : empty ? { nodes: [], edges: [] } : template === 'loop' ? loopExampleGraph() : exampleGraph()); });
 app.post('/api/projects/import', async req => { const { directory } = z.object({ directory: z.string().min(1).max(1000) }).parse(req.body); const result = await analyzeProject(directory); const project = createProject(result.name, result.graph, result.root); return { project, notes: result.notes, fileCount: result.fileCount }; });
 app.get('/api/projects/:id', async req => getProject(idOf(req)));
 app.put('/api/projects/:id', async req => {

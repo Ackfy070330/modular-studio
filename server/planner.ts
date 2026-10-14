@@ -6,6 +6,8 @@ function fields(expression: Expression | { kind: 'literal'; value: unknown }): s
 }
 function requirements(node: GraphNode) {
   const c = node.data.config;
+  if (node.data.kind === 'list') return [c.field as string];
+  if (node.data.kind === 'text') return [...c.template.matchAll(/\{\{([a-zA-Z_][a-zA-Z0-9_]{0,63})\}\}/g)].map((m: RegExpMatchArray) => m[1]);
   if (node.data.kind === 'validate') return [c.field as string];
   if (node.data.kind === 'transform') return fields(c.expression);
   if (node.data.kind === 'custom') {
@@ -16,7 +18,7 @@ function requirements(node: GraphNode) {
   return [];
 }
 function outputs(node: GraphNode): string[] {
-  return node.data.kind === 'transform' ? [node.data.config.outputField] : node.data.kind === 'custom' ? node.data.config.operations.map((o: any) => o.field) : node.data.kind === 'database' ? ['recordId'] : [];
+  return ['transform','value','text','list'].includes(node.data.kind) ? [node.data.config.outputField] : node.data.kind === 'custom' ? node.data.config.operations.map((o: any) => o.field) : node.data.kind === 'database' ? ['recordId'] : [];
 }
 export function planGraph(value: unknown) {
   const graph = parseGraph(value), changes: string[] = [], warnings: string[] = [];
@@ -25,7 +27,7 @@ export function planGraph(value: unknown) {
   if (!graph.nodes.length) return fail('请至少放入一个功能模块，或从订单模板开始。');
   const envelope: Record<string, GraphNode> = {};
   for (const kind of ['form', 'api', 'response', 'view'] as const) {
-    const matches = graph.nodes.filter(n => n.data.kind === kind);
+    const matches = graph.nodes.filter(n => kind === 'form' ? ['form','event'].includes(n.data.kind) : n.data.kind === kind);
     if (matches.length > 1) return fail(`存在多个${matches[0].data.label}类型模块，请先选择要保留的入口或输出；不会自动删除模块。`);
     if (matches[0]) envelope[kind] = matches[0];
     else {
@@ -77,7 +79,7 @@ export function planGraph(value: unknown) {
   }
   const created = links.filter(e => !forward.includes(e)).length;
   if (created) changes.push(`按输入、数据依赖、输出顺序建立 ${created} 条连接`);
-  const proposed: Graph = { nodes: ordered.map((n, i) => ({ ...n, position: { x: 60 + (Math.floor(i / 3) % 2 ? 2 - i % 3 : i % 3) * 310, y: 80 + Math.floor(i / 3) * 210 } })), edges: [...links, ...loops] };
+  const proposed: Graph = { ...graph, nodes: ordered.map((n, i) => ({ ...n, position: { x: 60 + (Math.floor(i / 3) % 2 ? 2 - i % 3 : i % 3) * 310, y: 80 + Math.floor(i / 3) * 210 } })), edges: [...links, ...loops] };
   try { executionOrder(proposed); } catch (e) { return fail((e as Error).message); }
   if (loops.some(e => proposed.nodes.slice(ordered!.findIndex(n => n.id === e.target), ordered!.findIndex(n => n.id === e.source) + 1).some(n => n.data.kind === 'database'))) warnings.push('循环体包含数据存储，每轮都会写入一条记录；失败不会回滚已完成的写入。');
   if (!changes.length) changes.push('保留现有执行顺序与连线，整理画布布局');
