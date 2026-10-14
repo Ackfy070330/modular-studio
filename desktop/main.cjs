@@ -75,7 +75,7 @@ async function createWindow() {
     const result = await dialog.showOpenDialog(window, { title: '选择要导入的项目', properties: ['openDirectory'] });
     return result.canceled ? null : result.filePaths[0];
   });
-  for (const [action, handler] of Object.entries({ state: () => updater.state(), check: () => updater.check(), download: () => updater.download(), cancel: () => updater.cancel(), reveal: () => { const file = updater.path(); if (!file) throw new Error('请先下载并校验更新'); shell.showItemInFolder(file); } })) {
+  for (const [action, handler] of Object.entries({ page: () => shell.openExternal('https://github.com/Ackfy070330/modular-studio/releases'), state: () => updater.state(), check: () => updater.check(), download: () => updater.download(), cancel: () => updater.cancel(), reveal: () => { const file = updater.path(); if (!file) throw new Error('请先下载并校验更新'); shell.showItemInFolder(file); } })) {
     ipcMain.handle('desktop:update-' + action, event => { if (!trustedSender(event)) throw new Error('不允许的窗口请求'); return handler(); });
   }
   await window.loadURL(origin);

@@ -36,7 +36,7 @@ app.addHook('onRequest', async (request, reply) => {
 });
 app.setErrorHandler((error: any, _request, reply) => { const status = error.statusCode || 400; reply.code(status).send({ message: error instanceof z.ZodError ? error.issues.map(i => `${i.path.join('.')}：${i.message}`).join('；').slice(0, 800) : error.message || '操作失败' }); });
 const idOf = (r: any) => String(r.params.id);
-app.get('/api/health', async () => ({ ok: true, version: '0.2.0', storage: 'sqlite', runtime: process.version, mode: 'local' }));
+app.get('/api/health', async () => ({ ok: true, version: '0.2.1', storage: 'sqlite', runtime: process.version, mode: 'local' }));
 app.get('/api/projects', async () => allProjects());
 app.post('/api/projects', async req => { const { name, empty, template } = z.object({ name: z.string().min(1).max(80), empty: z.boolean().optional(), template: z.literal('loop').optional() }).parse(req.body); return createProject(name, empty ? { nodes: [], edges: [] } : template === 'loop' ? loopExampleGraph() : exampleGraph()); });
 app.post('/api/projects/import', async req => { const { directory } = z.object({ directory: z.string().min(1).max(1000) }).parse(req.body); const result = await analyzeProject(directory); const project = createProject(result.name, result.graph, result.root); return { project, notes: result.notes, fileCount: result.fileCount }; });

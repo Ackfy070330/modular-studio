@@ -3,6 +3,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const path = require('node:path');
 const REPOSITORY = 'https://github.com/Ackfy070330/modular-studio';
 const API = 'https://api.github.com/repos/Ackfy070330/modular-studio/releases?per_page=20';
+const MANIFEST = 'https://raw.githubusercontent.com/Ackfy070330/modular-studio/main/updates/windows-x64.json';
 const MAX_BYTES = 350 * 1024 * 1024;
 function versionParts(version) { return /^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(version) ? version.split('.').map(Number) : null; }
 function compareVersions(a, b) {
@@ -39,23 +40,56 @@ async function fetchDownload(fetcher, url, signal) {
   }
   throw new Error('下载重定向次数过多');
 }
-function createUpdater({ version, directory, fetcher = fetch, changed = () => {} }) {
+async function readMetadata(response) {
+  const chunks = []; let size = 0;
+  for await (const chunk of response.body) { size += chunk.length; if (size > 1048576) throw new Error('版本信息过大'); chunks.push(chunk); }
+  return JSON.parse(Buffer.concat(chunks).toString());
+}
+function selectManifest(manifest, currentVersion) {
+  if (manifest?.schemaVersion !== 1 || !Array.isArray(manifest.releases) || !manifest.releases.length) throw new Error('备用更新清单格式无效');
+  // Validate every entry even when the installed version is newer.
+  for (const release of manifest.releases) if (!selectRelease([release], '0.0.0')) throw new Error('备用更新清单缺少可信安装包信息');
+  return selectRelease(manifest.releases, currentVersion);
+}
+function createUpdater({ version, directory, fetcher = fetch, changed = () => {}, now = Date.now }) {
   let state = { status: 'idle', currentVersion: version }, controller, selected, downloadedPath, downloading = false;
+  let cachedUntil = 0, apiRetryAt = 0, apiError = '';
   const update = patch => { state = { ...state, ...patch }; changed({ ...state }); return { ...state }; };
   return {
     state: () => ({ ...state }),
     path: () => downloadedPath,
     async check() {
       if (downloading || state.status === 'checking') return { ...state };
+      if (now() < cachedUntil && state.status !== 'error') return { ...state };
       selected = null; downloadedPath = undefined;
-      update({ status: 'checking', release: undefined, error: undefined, received: 0 });
+      update({ status: 'checking', release: undefined, error: undefined, notice: undefined, received: 0 });
       try {
-        const response = await fetcher(API, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Modular-Studio/' + version }, signal: AbortSignal.timeout(20000), redirect: 'error' });
-        if (!response.ok) throw new Error(`检查更新失败（HTTP ${response.status}），请稍后重试`);
-        const chunks = []; let size = 0;
-        for await (const chunk of response.body) { size += chunk.length; if (size > 1048576) throw new Error('版本信息过大'); chunks.push(chunk); }
-        selected = selectRelease(JSON.parse(Buffer.concat(chunks).toString()), version);
-        return update({ status: selected ? 'available' : 'current', release: selected || undefined });
+        let notice;
+        try {
+          if (now() < apiRetryAt) throw new Error(apiError);
+          const response = await fetcher(API, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Modular-Studio/' + version }, signal: AbortSignal.timeout(20000), redirect: 'error' });
+          if (!response.ok) {
+            const limited = response.status === 429 || (response.status === 403 && (response.headers.get('x-ratelimit-remaining') === '0' || response.headers.has('retry-after')));
+            if (limited) {
+              const retry = response.headers.get('retry-after');
+              const retryAt = retry && /^\d+$/.test(retry) ? now() + Number(retry) * 1000 : Date.parse(retry || '');
+              const resetAt = Number(response.headers.get('x-ratelimit-reset')) * 1000;
+              apiRetryAt = Math.max(now() + 60000, Number.isFinite(retryAt) ? retryAt : 0, Number.isFinite(resetAt) ? resetAt : 0);
+              apiError = `GitHub 匿名接口已限流，${new Date(apiRetryAt).toLocaleTimeString()} 后可重试。共享网络或代理也可能消耗额度，无需填写模型 API Key。`;
+            } else { apiRetryAt = now() + 60000; apiError = `GitHub 更新接口访问失败（HTTP ${response.status}）`; }
+            await response.body?.cancel(); throw new Error(apiError);
+          }
+          selected = selectRelease(await readMetadata(response), version);
+        } catch (primaryError) {
+          try {
+            const response = await fetcher(MANIFEST, { signal: AbortSignal.timeout(20000), redirect: 'error', cache: 'no-store' });
+            if (!response.ok) { await response.body?.cancel(); throw new Error(`HTTP ${response.status}`); }
+            selected = selectManifest(await readMetadata(response), version);
+            notice = '已通过本项目的备用发布清单完成检查；安装包仍需通过大小与 SHA-256 校验。';
+          } catch { throw new Error(`${primaryError.message}；备用更新清单也暂不可用，请打开发布页手动查看。`); }
+        }
+        cachedUntil = now() + 60000;
+        return update({ status: selected ? 'available' : 'current', release: selected || undefined, notice });
       } catch (error) { return update({ status: 'error', error: error.message }); }
     },
     async download() {
@@ -86,4 +120,4 @@ function createUpdater({ version, directory, fetcher = fetch, changed = () => {}
     cancel() { controller?.abort(); },
   };
 }
-module.exports = { createUpdater, selectRelease, compareVersions };
+module.exports = { createUpdater, selectRelease, compareVersions, selectManifest };

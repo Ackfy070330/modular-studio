@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktop', Object.freeze({
   isDesktop: true,
   selectDirectory: () => ipcRenderer.invoke('desktop:select-directory'),
+  openReleasePage: () => ipcRenderer.invoke('desktop:update-page'),
   updateState: () => ipcRenderer.invoke('desktop:update-state'),
   checkUpdate: () => ipcRenderer.invoke('desktop:update-check'),
   downloadUpdate: () => ipcRenderer.invoke('desktop:update-download'),

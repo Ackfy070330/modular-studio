@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "releases": [
+    {
+      "tag_name": "v0.2.0",
+      "draft": false,
+      "prerelease": true,
+      "body": "有界循环、自动整理与应用更新。",
+      "assets": [
+        {
+          "name": "Modular-Studio-Setup-0.2.0-x64.exe",
+          "state": "uploaded",
+          "size": 137563535,
+          "digest": "sha256:79609ab095f81adf92b91ec7423fbbab7a95738444aef6fb3a412d175a7d34d6",
+          "browser_download_url": "https://github.com/Ackfy070330/modular-studio/releases/download/v0.2.0/Modular-Studio-Setup-0.2.0-x64.exe"
+        }
+      ]
+    }
+  ]
+}

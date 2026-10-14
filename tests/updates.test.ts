@@ -6,6 +6,7 @@ import { mkdtemp, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 const { createUpdater, compareVersions, selectRelease } = createRequire(import.meta.url)('../desktop/updates.cjs');
+const manifest = () => ({ schemaVersion: 1, releases: [release()] });
 const content = Buffer.from('test installer bytes');
 function release(version = '0.3.0') {
   const name = `Modular-Studio-Setup-${version}-x64.exe`;
@@ -43,4 +44,41 @@ test('cancelled downloads can retry and failed checks do not erase local workspa
   updater.cancel(); assert.equal((await pending).status, 'available'); assert.deepEqual(await readdir(directory), []);
   const offline = createUpdater({ version: '0.2.0', directory, fetcher: async () => { throw new Error('offline'); } });
   assert.equal((await offline.check()).status, 'error'); await assert.rejects(offline.download(), /检查/);
+});
+
+test('rate-limited checks use the public manifest, cache results and respect API reset', async () => {
+  let clock = 1000000; const calls: string[] = [];
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'modular-rate-limit-'));
+  const updater = createUpdater({ version: '0.2.0', directory, now: () => clock, fetcher: async (url: string) => {
+    calls.push(url);
+    if (url.includes('api.github.com')) return new Response(null, { status: 403, headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '2000' } });
+    if (url.includes('raw.githubusercontent.com')) return Response.json(manifest());
+    return new Response(content);
+  } });
+  const state = await updater.check(); assert.equal(state.status, 'available'); assert.match(state.notice, /备用/);
+  await updater.check(); assert.equal(calls.length, 2);
+  clock += 61000; await updater.check(); assert.equal(calls.filter(x => x.includes('api.github.com')).length, 1);
+  assert.equal((await updater.download()).status, 'downloaded'); assert.deepEqual(await readFile(updater.path()), content);
+  clock = 2000001; await updater.check(); assert.equal(calls.filter(x => x.includes('api.github.com')).length, 2);
+});
+
+test('fallback can confirm current version but rejects malformed and untrusted manifests', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'modular-manifest-'));
+  for (const invalid of [null, {}, { schemaVersion: 1, releases: [] }, { schemaVersion: 1, releases: [{ ...release(), assets: [] }] }]) {
+    const updater = createUpdater({ version: '0.4.0', directory, fetcher: async (url: string) => url.includes('api.github.com') ? new Response(null, { status: 403 }) : Response.json(invalid) });
+    assert.equal((await updater.check()).status, 'error'); await assert.rejects(updater.download(), /检查/);
+  }
+  const current = createUpdater({ version: '0.3.0', directory, fetcher: async (url: string) => url.includes('api.github.com') ? new Response(null, { status: 503 }) : Response.json(manifest()) });
+  assert.equal((await current.check()).status, 'current');
+});
+
+test('failed fallback reports rate limiting and avoids repeating API calls before retry-after', async () => {
+  let clock = 1000000, calls = 0;
+  const updater = createUpdater({ version: '0.2.0', directory: os.tmpdir(), now: () => clock, fetcher: async (url: string) => {
+    if (url.includes('api.github.com')) { calls++; return new Response(null, { status: 429, headers: { 'retry-after': '120' } }); }
+    throw new Error('offline');
+  } });
+  const state = await updater.check(); assert.equal(state.status, 'error'); assert.match(state.error, /限流/); assert.match(state.error, /发布页/);
+  clock += 61000; await updater.check(); assert.equal(calls, 1);
+  clock += 61000; await updater.check(); assert.equal(calls, 2);
 });
