@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "releases": [
     {
-      "tag_name": "v0.2.0",
+      "tag_name": "v0.2.1",
       "draft": false,
       "prerelease": true,
-      "body": "有界循环、自动整理与应用更新。",
+      "body": "修复 0.2.0 更新检查遇到 GitHub HTTP 403 的问题。\n\n- API 限流时改用本仓库的公开更新清单，仍校验下载来源、大小和 SHA-256\n- 成功检查缓存一分钟，遵守服务端限流恢复时间\n- 增加明确提示与打开官方发布页按钮，无需 API Key\n\n26 项自动化测试、构建及打包资源集成测试通过。\n\n0.2.0 用户请手动下载 Modular-Studio-Setup-0.2.1-x64.exe，保存项目、退出应用后安装；会保留本地工作空间。本版仍为未签名的个人预览版。",
       "assets": [
         {
-          "name": "Modular-Studio-Setup-0.2.0-x64.exe",
+          "name": "Modular-Studio-Setup-0.2.1-x64.exe",
           "state": "uploaded",
-          "size": 137563535,
-          "digest": "sha256:79609ab095f81adf92b91ec7423fbbab7a95738444aef6fb3a412d175a7d34d6",
-          "browser_download_url": "https://github.com/Ackfy070330/modular-studio/releases/download/v0.2.0/Modular-Studio-Setup-0.2.0-x64.exe"
+          "size": 137852719,
+          "digest": "sha256:4ce83e1135d8caec777843522a40559fdc42f1b036e372dcab6a854321d159b4",
+          "browser_download_url": "https://github.com/Ackfy070330/modular-studio/releases/download/v0.2.1/Modular-Studio-Setup-0.2.1-x64.exe"
         }
       ]
     }
