@@ -1,0 +1,6 @@
+import type { Graph } from '../shared/model';
+import { X, WandSparkles } from 'lucide-react';
+export interface PlanResult { graph: Graph | null; changes: string[]; warnings: string[]; errors: string[] }
+export function PlanDialog({ result, close, apply }: { result: PlanResult; close: () => void; apply: () => void }) {
+  return <div className="modal-shade"><section className="modal wide" role="dialog" aria-modal="true" aria-label="自动整理预览"><header><div><h2>自动整理预览</h2><p>模块位置可以自由摆放；执行顺序由连线与数据依赖决定。</p></div><button className="icon-button" aria-label="关闭整理预览" onClick={close}><X size={18}/></button></header><div className="modal-body plan-content">{result.errors.length ? <div className="plan-errors"><strong>还需要你处理</strong>{result.errors.map(s => <p key={s}>{s}</p>)}<p>原图保持不变。修改后可再次整理。</p></div> : <><h3>建议执行顺序</h3><ol className="plan-order">{result.graph?.nodes.map(n => <li key={n.id}>{n.data.label}</li>)}</ol><h3>将要修改</h3><ul>{result.changes.map(s => <li key={s}>{s}</li>)}</ul></>}{result.warnings.map(s => <p className="hint" key={s}>{s}</p>)}</div><footer><span className="muted">应用后可撤销；不会自动保存或运行。</span><button className="button" onClick={close}>取消</button><button className="button primary" disabled={!result.graph || !!result.errors.length} onClick={apply}><WandSparkles size={14}/>应用整理方案</button></footer></section></div>;
+}

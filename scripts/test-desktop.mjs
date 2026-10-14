@@ -52,9 +52,16 @@ try {
   const done = await until(`/api/runs/${run.id}`, s => s.status === 'ok'); assert.equal(done.output.total, 300);
   const imported = await json('/api/projects/import', 'POST', { directory: path.resolve('examples/order-app') }); assert.equal(imported.fileCount, 2); assert.equal(imported.project.graph.edges.length, 1);
   assert.equal((await request('/api/custom/generate', { method: 'POST', body: JSON.stringify({}) })).status, 428);
+  const loopProject = await json('/api/projects', 'POST', { name: 'Loop integration', template: 'loop' });
+  const loopRun = await json(`/api/projects/${loopProject.id}/execute`, 'POST', { input: { sku: 'LOOP', quantity: 1, unitPrice: 100, total: 0 } });
+  assert.equal(loopRun.output.total, 300);
+  const loopHistory = await json(`/api/runs/${loopRun.runId}`); assert.equal(loopHistory.steps.filter(s => s.nodeId === 'calculate_total').length, 3);
+  const plan = await json(`/api/projects/${loopProject.id}/plan`, 'POST', { graph: { nodes: loopProject.graph.nodes, edges: [] } });
+  assert.equal(plan.errors.length, 0); assert.equal(plan.graph.nodes.length, 7);
   await stop(); await start();
   assert.equal((await json(`/api/projects/${project.id}`)).name, 'Desktop smoke test');
   assert.equal((await json(`/api/projects/${project.id}/runs`)).length, 2);
+  assert.equal((await json(`/api/runs/${loopRun.runId}`)).steps.length, 9);
   await stop();
-  console.log('Desktop backend passed: bundled Node, random port, session auth, UI assets, execution, SQLite, debugger, source import, key gate, persistence and shutdown.');
+  console.log('Desktop backend passed: bundled Node, auth, UI, execution, SQLite, debugger, import, key gate, loops, planner, persistence and shutdown.');
 } finally { if (child && child.exitCode === null) child.kill(); }

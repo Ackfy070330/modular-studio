@@ -37,7 +37,7 @@ export async function startRun(project: Project, input: Record<string, any>, opt
     if (finished) return;
     if (message.type === 'step') {
       const step = { ...safeSnapshot(message.step), sourceLine: compiled.bindings[message.step.nodeId] };
-      const i = run.steps.findIndex(s => s.nodeId === step.nodeId);
+      const i = run.steps.findIndex(s => s.sequence === step.sequence);
       if (i < 0) run.steps.push(step); else run.steps[i] = step;
       putRun(run);
     } else if (message.type === 'done') finish('ok', message.output);

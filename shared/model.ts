@@ -6,10 +6,11 @@ export interface BlockData extends Record<string, unknown> {
   label: string; description: string; kind: NodeKind; config: Record<string, any>;
 }
 export interface GraphNode { id: string; type: 'module'; position: { x: number; y: number }; data: BlockData }
-export interface GraphEdge { id: string; source: string; target: string; label?: string; data?: { custom?: CustomContent } }
+export interface LoopConfig { maxIterations: number; condition?: { field: string; op: '<' | '<=' | '>' | '>=' | '==' | '!='; value: number } }
+export interface GraphEdge { id: string; source: string; target: string; label?: string; data?: { custom?: CustomContent; loop?: LoopConfig } }
 export interface Graph { nodes: GraphNode[]; edges: GraphEdge[] }
 export interface Project { id: string; name: string; description: string; revision: number; graph: Graph; sourceRoot: string | null; createdAt: string; updatedAt: string }
-export interface Step { nodeId: string; label: string; kind: NodeKind; status: 'running' | 'ok' | 'error'; startedAt: string; durationMs?: number; input: any; output?: any; error?: string; sourceLine?: number }
+export interface Step { nodeId: string; sequence?: number; visit?: number; viaEdgeId?: string; loopDecision?: string; label: string; kind: NodeKind; status: 'running' | 'ok' | 'error'; startedAt: string; durationMs?: number; input: any; output?: any; error?: string; sourceLine?: number }
 export interface Run { id: string; projectId: string; revision: number; graph: Graph; input: any; status: 'running' | 'paused' | 'ok' | 'error' | 'cancelled'; startedAt: string; finishedAt?: string; environment: string; steps: Step[]; output?: any; error?: string; debug: boolean; traceId: string }
 export const kinds: Record<NodeKind, { label: string; subtitle: string; color: string; group: string }> = {
   form: { label: '表单输入', subtitle: '收集用户填写的数据', color: '#4e88d8', group: '界面与事件' },
@@ -49,4 +50,13 @@ export function expressionLabel(e: Expression): string {
   if (e.kind === 'field') return e.name;
   if (e.kind === 'number') return String(e.value);
   return `(${expressionLabel(e.left)} ${e.op === '*' ? '×' : e.op === '/' ? '÷' : e.op} ${expressionLabel(e.right)})`;
+}
+export function loopExampleGraph(): Graph {
+  const graph = exampleGraph();
+  graph.nodes[0].data.config.fields.push({ name: 'total', label: '初始累计金额', type: 'number', value: 0 });
+  const step = graph.nodes.find(n => n.id === 'calculate_total')!;
+  step.data.label = '累计金额（循环 3 轮）';
+  step.data.config.expression = { kind: 'math', op: '+', left: { kind: 'field', name: 'total' }, right: { kind: 'field', name: 'unitPrice' } };
+  graph.edges.push({ id: 'repeat_total', source: step.id, target: step.id, label: '循环 3 轮', data: { loop: { maxIterations: 3 } } });
+  return graph;
 }

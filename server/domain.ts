@@ -8,6 +8,7 @@ const expression: z.ZodType<Expression> = z.lazy(() => z.discriminatedUnion('kin
 ]));
 export const operationsSchema = z.array(z.object({ field: fieldName, value: z.union([expression, z.object({ kind: z.literal('literal'), value: z.union([z.string().max(2000), z.number().finite(), z.boolean(), z.null()]) })]) })).max(20);
 export const customContentSchema = z.object({ instructions: z.string().max(4000), operations: operationsSchema, generatedFor: z.string().max(4000).optional() });
+export const loopSchema = z.object({ maxIterations: z.number().int().min(1).max(100), condition: z.object({ field: fieldName, op: z.enum(['<', '<=', '>', '>=', '==', '!=']), value: z.number().finite() }).optional() });
 const configs = {
   form: z.object({ fields: z.array(z.object({ name: fieldName, label: z.string().max(80), type: z.enum(['text', 'number']), value: z.union([z.string(), z.number()]) })).min(1).max(20) }),
   api: z.object({ method: z.literal('POST'), path: z.string().regex(/^\/[a-zA-Z0-9_\-/]*$/).max(150) }),
@@ -21,7 +22,7 @@ const configs = {
 };
 const graphSchema = z.object({
   nodes: z.array(z.object({ id: z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/), type: z.literal('module'), position: z.object({ x: z.number().finite(), y: z.number().finite() }), data: z.object({ label: z.string().min(1).max(100), description: z.string().max(500), kind: z.enum(['form', 'api', 'validate', 'transform', 'database', 'response', 'view', 'source', 'custom']), config: z.record(z.string(), z.unknown()) }) })).max(200),
-  edges: z.array(z.object({ id: z.string().max(100), source: z.string(), target: z.string(), label: z.string().max(100).optional(), data: z.object({ custom: customContentSchema.optional() }).optional() })).max(400),
+  edges: z.array(z.object({ id: z.string().min(1).max(100), source: z.string(), target: z.string(), label: z.string().max(100).optional(), data: z.object({ custom: customContentSchema.optional(), loop: loopSchema.optional() }).optional() })).max(400),
 });
 export function parseGraph(value: unknown): Graph {
   const graph = graphSchema.parse(value) as Graph;
@@ -34,7 +35,6 @@ export function parseGraph(value: unknown): Graph {
   }
   for (const edge of graph.edges) {
     if (!ids.has(edge.source) || !ids.has(edge.target)) throw new Error('连线引用了不存在的模块');
-    if (edge.source === edge.target) throw new Error('模块不能连接自身');
     if (edgeIds.has(edge.id)) throw new Error('连线 ID 不能重复');
     edgeIds.add(edge.id);
   }
@@ -46,11 +46,12 @@ export function executionOrder(graph: Graph) {
   }
   if (graph.nodes.some(n => n.data.kind === 'source')) throw new Error('导入项目目前提供静态结构分析；不能作为蓝图直接执行');
   if (!graph.nodes.length) throw new Error('请先添加模块');
-  const inputs = new Map(graph.nodes.map(n => [n.id, graph.edges.filter(e => e.target === n.id)]));
-  const outputs = new Map(graph.nodes.map(n => [n.id, graph.edges.filter(e => e.source === n.id)]));
-  if ([...inputs.values(), ...outputs.values()].some(a => a.length > 1)) throw new Error('当前执行器支持单条有序流程，请先移除分叉或重复连线');
+  const forward = graph.edges.filter(e => !e.data?.loop);
+  const inputs = new Map(graph.nodes.map(n => [n.id, forward.filter(e => e.target === n.id)]));
+  const outputs = new Map(graph.nodes.map(n => [n.id, forward.filter(e => e.source === n.id)]));
+  if ([...inputs.values(), ...outputs.values()].some(a => a.length > 1)) throw new Error('存在未定义的分叉：回到前面步骤的连线请配置为循环，或使用自动整理预览连接方案');
   const starts = graph.nodes.filter(n => !inputs.get(n.id)!.length);
-  if (starts.length !== 1) throw new Error('流程必须有且只有一个入口，请连接所有模块并移除环路');
+  if (starts.length !== 1) throw new Error('流程必须有且只有一个入口；请用自动整理连接模块，或为回路线配置循环');
   const ordered = []; const seen = new Set<string>(); let node = starts[0];
   while (node) {
     if (seen.has(node.id)) throw new Error('流程中存在环路');
@@ -64,6 +65,17 @@ export function executionOrder(graph: Graph) {
   if (ordered.filter(n => n.data.kind === 'form').length !== 1 || ordered.filter(n => n.data.kind === 'view').length !== 1) throw new Error('流程只支持一个表单与一个结果展示');
   if (ordered.filter(n => n.data.kind === 'api').length !== 1 || ordered.filter(n => n.data.kind === 'response').length !== 1) throw new Error('流程需要一个 API 接口和一个返回响应模块');
   if (ordered[1]?.data.kind !== 'api' || ordered.at(-2)?.data.kind !== 'response') throw new Error('API 应紧接表单，返回响应应紧接结果展示之前');
+  const ranges: { start: number; end: number }[] = [];
+  const loopSources = new Set<string>();
+  for (const edge of graph.edges.filter(e => e.data?.loop)) {
+    loopSchema.parse(edge.data!.loop);
+    const start = ordered.findIndex(n => n.id === edge.target), end = ordered.findIndex(n => n.id === edge.source);
+    if (start < 2 || end > ordered.length - 3 || start > end) throw new Error('循环必须从处理步骤返回自身或之前的处理步骤，不能包含表单、API、响应和展示');
+    if (loopSources.has(edge.source)) throw new Error('同一个模块只能配置一条循环返回线');
+    loopSources.add(edge.source);
+    if (ranges.some(r => (r.start < start && start <= r.end && r.end < end) || (start < r.start && r.start <= end && end < r.end))) throw new Error('循环区间不能交叉；可以使用独立循环或完整嵌套循环');
+    ranges.push({ start, end });
+  }
   return ordered;
 }
 export function safeSnapshot(value: unknown, depth = 0): any {

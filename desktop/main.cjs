@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, session } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, session, shell, net } = require('electron');
+const { createUpdater } = require('./updates.cjs');
 const { fork } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const { existsSync, mkdirSync, appendFileSync } = require('node:fs');
@@ -12,6 +13,7 @@ const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, 
 const dataDirectory = path.join(app.getPath('userData'), 'workspace');
 mkdirSync(dataDirectory, { recursive: true });
 const logFile = path.join(app.getPath('userData'), 'desktop.log');
+const updater = createUpdater({ version: app.getVersion(), directory: path.join(app.getPath('userData'), 'updates'), fetcher: (...args) => net.fetch(...args), changed: state => { if (window && !window.isDestroyed()) window.webContents.send('desktop:update-state', state); } });
 function log(message) { appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`); }
 function trustedSender(event) { return window && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && new URL(event.senderFrame.url).origin === origin; }
 
@@ -73,6 +75,9 @@ async function createWindow() {
     const result = await dialog.showOpenDialog(window, { title: '选择要导入的项目', properties: ['openDirectory'] });
     return result.canceled ? null : result.filePaths[0];
   });
+  for (const [action, handler] of Object.entries({ state: () => updater.state(), check: () => updater.check(), download: () => updater.download(), cancel: () => updater.cancel(), reveal: () => { const file = updater.path(); if (!file) throw new Error('请先下载并校验更新'); shell.showItemInFolder(file); } })) {
+    ipcMain.handle('desktop:update-' + action, event => { if (!trustedSender(event)) throw new Error('不允许的窗口请求'); return handler(); });
+  }
   await window.loadURL(origin);
 }
 
@@ -83,6 +88,7 @@ else {
   app.whenReady().then(createWindow).catch(error => { log(error.stack || String(error)); dialog.showErrorBox('模序启动失败', error.message); app.quit(); });
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', event => {
+    updater.cancel();
     if (quitting || !backend || backend.exitCode !== null) return;
     event.preventDefault(); quitting = true;
     const timeout = setTimeout(() => { backend.kill(); app.exit(); }, 5000);

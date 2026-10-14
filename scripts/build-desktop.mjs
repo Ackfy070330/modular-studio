@@ -55,6 +55,8 @@ const zip = await JSZip.loadAsync(archive);
 const prefix = filename.slice(0, -4) + '/';
 for (const file of ['node.exe', 'LICENSE']) {
   const entry = zip.file(prefix + file); if (!entry) throw new Error('Node.js 包缺少 ' + file);
-  await writeFile(path.join('desktop-runtime/node', file), await entry.async('nodebuffer'));
+  const target = path.join('desktop-runtime/node', file), content = await entry.async('nodebuffer');
+  let current; try { current = await readFile(target); } catch { /* First build. */ }
+  if (!current?.equals(content)) await writeFile(target, content);
 }
 console.log('Desktop resources ready: bundled backend, UI, Node.js and icons.');

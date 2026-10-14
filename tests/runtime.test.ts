@@ -6,7 +6,7 @@ import path from 'node:path';
 process.env.MODULAR_DATA_DIR = await mkdtemp(path.join(os.tmpdir(), 'modular-runtime-'));
 const { startRun, debugState, controlRun, stopAll } = await import('../server/runtime.js');
 const { createProject, getRun, db } = await import('../server/store.js');
-const { exampleGraph } = await import('../shared/model.js');
+const { exampleGraph, loopExampleGraph } = await import('../shared/model.js');
 async function until<T>(read: () => T, ready: (value: T) => boolean, timeout = 10000): Promise<T> { const start = Date.now(); while (Date.now() - start < timeout) { const value = read(); if (ready(value)) return value; await new Promise(r => setTimeout(r, 60)); } throw new Error('等待运行状态超时'); }
 test('separate Node process really pauses, exposes input variables, steps and resumes', { timeout: 20000 }, async () => {
   const project = createProject('Debug test', exampleGraph());
@@ -27,5 +27,19 @@ test('failed validation retains failed node and never marks downstream steps suc
     const run = await startRun(project, { sku: 'TEST', quantity: 0, unitPrice: 100 });
     const failed = await until(() => getRun(run.id), s => s.status === 'error'); assert.equal(failed.steps.at(-1)?.nodeId, 'validate_order'); assert.equal(failed.steps.at(-1)?.status, 'error'); assert.equal(failed.steps.length, 3);
   }
+});
+test('loop debugger pauses on each visit and preserves all persisted inputs and outputs', { timeout: 20000 }, async () => {
+  const project = createProject('Loop debug', loopExampleGraph());
+  const run = await startRun(project, { sku: 'LOOP', quantity: 1, unitPrice: 100, total: 0 }, { debug: true, breakpoints: ['calculate_total'] });
+  let generation = 0;
+  for (const total of [0, 100, 200]) {
+    const paused = await until(() => debugState(run.id), s => s.state === 'paused' && s.generation > generation && s.variables.data?.total === total);
+    generation = paused.generation;
+    const active = getRun(run.id).steps.at(-1)!; assert.equal(active.nodeId, 'calculate_total'); assert.equal(active.status, 'running');
+    await controlRun(run.id, 'continue');
+  }
+  const completed = await until(() => getRun(run.id), s => s.status === 'ok');
+  assert.equal(completed.output.total, 300); assert.equal(completed.steps.length, 9);
+  assert.deepEqual(completed.steps.filter(s => s.nodeId === 'calculate_total').map(s => s.output.total), [100, 200, 300]);
 });
 test.after(() => { stopAll(); db.close(); });

@@ -10,10 +10,11 @@ import { z } from 'zod';
 import { allProjects, getProject, putProject, createProject, listRuns, getRun, dataDir, db } from './store.js';
 import { parseGraph, executionOrder } from './domain.js';
 import { compileGraph, standaloneFiles, previewHtml } from './compiler.js';
+import { planGraph } from './planner.js';
 import { startRun, debugState, controlRun, stopAll } from './runtime.js';
 import { analyzeProject, readProjectSource } from './importer.js';
 import { agentSettings, saveAgentSettings, proposeChanges, applyProposal, assertCustomChanges, generateCustom } from './agents.js';
-import { exampleGraph } from '../shared/model.js';
+import { exampleGraph, loopExampleGraph } from '../shared/model.js';
 export const app = Fastify({ logger: false, bodyLimit: 512000 });
 const desktopToken = process.env.MODULAR_SESSION_TOKEN;
 app.addHook('onRequest', async (request, reply) => {
@@ -35,9 +36,9 @@ app.addHook('onRequest', async (request, reply) => {
 });
 app.setErrorHandler((error: any, _request, reply) => { const status = error.statusCode || 400; reply.code(status).send({ message: error instanceof z.ZodError ? error.issues.map(i => `${i.path.join('.')}：${i.message}`).join('；').slice(0, 800) : error.message || '操作失败' }); });
 const idOf = (r: any) => String(r.params.id);
-app.get('/api/health', async () => ({ ok: true, version: '0.1.0', storage: 'sqlite', runtime: process.version, mode: 'local' }));
+app.get('/api/health', async () => ({ ok: true, version: '0.2.0', storage: 'sqlite', runtime: process.version, mode: 'local' }));
 app.get('/api/projects', async () => allProjects());
-app.post('/api/projects', async req => { const { name, empty } = z.object({ name: z.string().min(1).max(80), empty: z.boolean().optional() }).parse(req.body); return createProject(name, empty ? { nodes: [], edges: [] } : exampleGraph()); });
+app.post('/api/projects', async req => { const { name, empty, template } = z.object({ name: z.string().min(1).max(80), empty: z.boolean().optional(), template: z.literal('loop').optional() }).parse(req.body); return createProject(name, empty ? { nodes: [], edges: [] } : template === 'loop' ? loopExampleGraph() : exampleGraph()); });
 app.post('/api/projects/import', async req => { const { directory } = z.object({ directory: z.string().min(1).max(1000) }).parse(req.body); const result = await analyzeProject(directory); const project = createProject(result.name, result.graph, result.root); return { project, notes: result.notes, fileCount: result.fileCount }; });
 app.get('/api/projects/:id', async req => getProject(idOf(req)));
 app.put('/api/projects/:id', async req => {
@@ -49,6 +50,7 @@ app.put('/api/projects/:id', async req => {
   return putProject({ ...project, name: body.name, graph, revision: project.revision + 1, updatedAt: new Date().toISOString() });
 });
 app.post('/api/projects/:id/validate', async req => { const project = getProject(idOf(req)); const graph = (req.body as any)?.graph ? parseGraph((req.body as any).graph) : project.graph; return { valid: true, order: executionOrder(graph).map(n => n.id) }; });
+app.post('/api/projects/:id/plan', async req => { const project = getProject(idOf(req)); if (project.sourceRoot) throw new Error('源码分析项目只读'); return planGraph((req.body as any)?.graph || project.graph); });
 app.get('/api/projects/:id/code', async req => { const project = getProject(idOf(req)); return compileGraph(project.graph); });
 app.get('/api/projects/:id/source/:nodeId', async (req: any) => { const project = getProject(idOf(req)); const node = project.graph.nodes.find(n => n.id === req.params.nodeId); if (!project.sourceRoot || !node || node.data.kind !== 'source') throw new Error('没有关联的源码'); return { code: await readProjectSource(project.sourceRoot, node.data.config.path), path: node.data.config.path }; });
 app.get('/api/projects/:id/export', async (req, reply) => { const project = getProject(idOf(req)); const files = standaloneFiles(project.id, project.name, project.graph); const zip = new JSZip(); for (const [name, content] of Object.entries(files)) zip.file(name, content); reply.header('content-type', 'application/zip').header('content-disposition', 'attachment; filename="modular-app.zip"'); return zip.generateAsync({ type: 'nodebuffer' }); });

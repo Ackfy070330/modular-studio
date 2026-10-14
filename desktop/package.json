@@ -1,7 +1,7 @@
 {
   "name": "modular-studio-desktop",
   "productName": "Modular Studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "模序 · 可视化模块开发与数据流调试工作台",
   "main": "main.cjs",
   "author": "Ackfy070330",
