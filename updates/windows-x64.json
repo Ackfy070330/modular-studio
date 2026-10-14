@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "releases": [
     {
-      "tag_name": "v0.2.1",
+      "tag_name": "v0.3.0",
       "draft": false,
       "prerelease": true,
-      "body": "修复 0.2.0 更新检查遇到 GitHub HTTP 403 的问题。\n\n- API 限流时改用本仓库的公开更新清单，仍校验下载来源、大小和 SHA-256\n- 成功检查缓存一分钟，遵守服务端限流恢复时间\n- 增加明确提示与打开官方发布页按钮，无需 API Key\n\n26 项自动化测试、构建及打包资源集成测试通过。\n\n0.2.0 用户请手动下载 Modular-Studio-Setup-0.2.1-x64.exe，保存项目、退出应用后安装；会保留本地工作空间。本版仍为未签名的个人预览版。",
+      "body": "第三个功能预览版本：先画页面，再定义功能与数据流。\n\n- 新项目选择前端展示页、数据控制台或单页网站；原生应用与游戏后续开放\n- 13 种页面组件，自由拖动、缩放、拉框绘制、图层调整、复制和撤销\n- 按钮执行流程、滚动定位、显隐切换；输入字段与输出数据绑定\n- 淡入、上滑、悬停动效，桌面与手机真实预览\n- 页面事件、设置数据、文本组合和列表处理模块，可与已有循环、计算、存储及调试组合\n- 页面布局与蓝图一起保存，导出 ZIP 包含同一页面与可运行 Node.js 后端\n\n30 项自动化测试、TypeScript/Vite 构建与最终打包资源集成测试通过。桌面实测类型选择、拖动与撤销、拉框、保存、按钮真实执行和手机预览。生产依赖审计为 0 个已知漏洞。\n\n下载 Modular-Studio-Setup-0.3.0-x64.exe，保存项目并退出旧版后安装，保留本地工作空间。基础页面组件和内置逻辑无需 API Key；AI 自定义仍需配置。\n\n本版为未签名的 Windows x64 个人预览版。当前为单页 Web 产品，所有执行按钮共用一条流程，eventId 标识触发按钮。图片使用 HTTPS 地址；不提供本地图片打包、多页路由、账号权限、独立多事件流程或游戏运行时。页面区域是视觉背景，窄屏按纵向位置排成单列。源代码公开展示，尚未选择开源许可证。",
       "assets": [
         {
-          "name": "Modular-Studio-Setup-0.2.1-x64.exe",
+          "name": "Modular-Studio-Setup-0.3.0-x64.exe",
           "state": "uploaded",
-          "size": 137852719,
-          "digest": "sha256:4ce83e1135d8caec777843522a40559fdc42f1b036e372dcab6a854321d159b4",
-          "browser_download_url": "https://github.com/Ackfy070330/modular-studio/releases/download/v0.2.1/Modular-Studio-Setup-0.2.1-x64.exe"
+          "size": 138464632,
+          "digest": "sha256:220a589be8fa4f70741ee03014a16644067f9465c58496b0784aeff981cbc511",
+          "browser_download_url": "https://github.com/Ackfy070330/modular-studio/releases/download/v0.3.0/Modular-Studio-Setup-0.3.0-x64.exe"
         }
       ]
     }
